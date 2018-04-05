@@ -20,6 +20,7 @@ using System.ComponentModel;
 using System.Diagnostics;
 using System.Globalization;
 using System.IO;
+using System.IO.Compression;
 using System.Linq;
 using System.Net;
 using System.Reflection;
@@ -28,7 +29,6 @@ using System.Threading;
 using System.Windows;
 using System.Windows.Input;
 using System.Windows.Threading;
-using Ionic.Zip;
 using NLog;
 
 namespace FFXIVAPP.Updater
@@ -131,19 +131,19 @@ namespace FFXIVAPP.Updater
             var path = Path.GetDirectoryName(Assembly.GetExecutingAssembly()
                                                      .Location);
             CleanupTemporary(path);
-            using (var zip = ZipFile.Read(MainWindowViewModel.Instance.ZipFileName))
+            using (var zip = ZipFile.OpenRead(MainWindowViewModel.Instance.ZipFileName))
             {
-                foreach (var zipEntry in zip)
+                foreach (var zipEntry in zip.Entries)
                 {
                     try
                     {
-                        if (File.Exists("FFXIVAPP.Client.exe.nlog") && zipEntry.FileName.Contains("FFXIVAPP.Client.exe.nlog"))
+                        if (File.Exists("FFXIVAPP.Client.exe.nlog") && zipEntry.Name.Contains("FFXIVAPP.Client.exe.nlog"))
                         {
                             continue;
                         }
-                        zipEntry.Extract(path, ExtractExistingFileAction.OverwriteSilently);
+                        zipEntry.ExtractToFile(Path.Combine(path, zipEntry.FullName), true);
                     }
-                    catch (Exception ex)
+                    catch (Exception)
                     {
                         // IGNORED
                     }

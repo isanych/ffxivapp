@@ -41,8 +41,7 @@ using FFXIVAPP.Common.Models;
 using FFXIVAPP.Common.RegularExpressions;
 using FFXIVAPP.Common.Utilities;
 using Machina;
-using Machina.Events;
-using Machina.Models;
+using Machina.FFXIV;
 using Newtonsoft.Json.Linq;
 using NLog;
 using Sharlayan;
@@ -62,10 +61,9 @@ namespace FFXIVAPP.Client
 
         #endregion
 
-        public static bool NetworkWorking
-        {
-            get { return NetworkHandler.Instance.IsRunning; }
-        }
+        private static FFXIVNetworkMonitor _networkMonitor = null;
+
+        public static bool NetworkWorking => _networkMonitor != null;
 
         /// <summary>
         /// </summary>
@@ -763,45 +761,42 @@ namespace FFXIVAPP.Client
         {
             StopNetworkWorker();
 
-            NetworkHandler.Instance.ExceptionEvent += NetworkHandler_ExceptionEvent;
-            NetworkHandler.Instance.NewNetworkPacketEvent += NetworkHandler_NewPacketEvent;
+            _networkMonitor = new FFXIVNetworkMonitor();
+            _networkMonitor.MessageReceived += MessageReceived;
 
-            var config = new NetworkConfig();
-            config.ApplicationName = AssemblyHelper.Name;
-            config.CurrentProcessID = Constants.ProcessModel.ProcessID;
-            config.ExecutablePath = Application.ExecutablePath;
-            config.UserSelectedInterface = Settings.Default.DefaultNetworkInterface;
-            config.UseWinPCap = Settings.Default.NetworkUseWinPCap;
+            if (Constants.ProcessModel.ProcessID > 0)
+            {
+                _networkMonitor.ProcessID = (uint) Constants.ProcessModel.ProcessID;
+            }
+            //config.ExecutablePath = Application.ExecutablePath;
+            //config.UserSelectedInterface = Settings.Default.DefaultNetworkInterface;
+            if (Settings.Default.NetworkUseWinPCap)
+            {
+                _networkMonitor.MonitorType = TCPNetworkMonitor.NetworkMonitorType.WinPCap;
+            }
 
-            NetworkHandler.Instance.SetProcess(config);
-
-            NetworkHandler.Instance.StartDecrypting();
+            _networkMonitor.Start();
         }
 
         public static void StopNetworkWorker()
         {
-            NetworkHandler.Instance.ExceptionEvent -= NetworkHandler_ExceptionEvent;
-            NetworkHandler.Instance.NewNetworkPacketEvent -= NetworkHandler_NewPacketEvent;
-
-            NetworkHandler.Instance.StopDecrypting();
+            if (NetworkWorking)
+            {
+                _networkMonitor.Stop();
+                _networkMonitor = null;
+            }
         }
 
-        private static void NetworkHandler_ExceptionEvent(object sender, Machina.Events.ExceptionEvent e)
+        private static void MessageReceived(string connection, long epoch, byte[] message)
         {
-            Logging.Log(e.Logger, new LogItem(e.Exception, e.LevelIsError));
-        }
-
-        private static void NetworkHandler_NewPacketEvent(object sender, NewNetworkPacketEvent e)
-        {
-            var packet = e.NetworkPacket;
 
             AppContextHelper.Instance.RaiseNewPacket(new NetworkPacket
             {
-                Buffer = packet.Buffer,
-                CurrentPosition = packet.CurrentPosition,
-                Key = packet.Key,
-                MessageSize = packet.MessageSize,
-                PacketDate = packet.PacketDate
+                Buffer = message,
+                CurrentPosition = 0,
+                Key = 0,
+                MessageSize = message.Length,
+                PacketDate = DateTimeOffset.FromUnixTimeMilliseconds(epoch).DateTime
             });
         }
 
